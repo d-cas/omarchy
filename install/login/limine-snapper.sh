@@ -1,8 +1,4 @@
 if command -v limine &>/dev/null; then
-  sudo tee /etc/mkinitcpio.conf.d/omarchy_hooks.conf <<EOF >/dev/null
-HOOKS=(base udev plymouth keyboard autodetect microcode modconf kms keymap consolefont block encrypt filesystems fsck btrfs-overlayfs)
-EOF
-
   [[ -f /boot/EFI/limine/limine.conf ]] || [[ -f /boot/EFI/BOOT/limine.conf ]] && EFI=true
 
   # Conf location is different between EFI and BIOS
@@ -32,6 +28,10 @@ ESP_PATH="/boot"
 
 KERNEL_CMDLINE[default]="$CMDLINE"
 KERNEL_CMDLINE[default]+="quiet splash"
+
+# Enable dracut btrfs snapshot overlayfs support
+KERNEL_CMDLINE[Snapshots]="$CMDLINE"
+KERNEL_CMDLINE[Snapshots]+="quiet splash rd.live.overlay.overlayfs=1"
 
 ENABLE_UKI=yes
 
@@ -75,7 +75,7 @@ term_background_bright: 24283b
  
 EOF
 
-  sudo pacman -S --noconfirm --needed limine-snapper-sync limine-mkinitcpio-hook
+  sudo pacman -S --noconfirm --needed limine-snapper-sync limine-dracut-support
 
   # Match Snapper configs if not installing from the ISO
   if [[ -z ${OMARCHY_CHROOT_INSTALL:-} ]]; then

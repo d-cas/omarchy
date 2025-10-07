@@ -1,24 +1,6 @@
 if ! command -v limine &>/dev/null; then
-  # Add kernel hooks
-  if ! grep -Eq '^HOOKS=.*plymouth' /etc/mkinitcpio.conf; then
-    # Backup original mkinitcpio.conf just in case
-    backup_timestamp=$(date +"%Y%m%d%H%M%S")
-    sudo cp /etc/mkinitcpio.conf "/etc/mkinitcpio.conf.bak.${backup_timestamp}"
-
-    # Add plymouth to HOOKS array after 'base udev' or 'base systemd'
-    if grep "^HOOKS=" /etc/mkinitcpio.conf | grep -q "base systemd"; then
-      sudo sed -i '/^HOOKS=/s/base systemd/base systemd plymouth/' /etc/mkinitcpio.conf
-    elif grep "^HOOKS=" /etc/mkinitcpio.conf | grep -q "base udev"; then
-      sudo sed -i '/^HOOKS=/s/base udev/base udev plymouth/' /etc/mkinitcpio.conf
-    else
-      echo "Couldn't add the Plymouth hook"
-    fi
-
-    # Regenerate initramfs
-    sudo mkinitcpio -P
-  fi
-
-  # Add kernel parameters for Plymouth
+  # dracut handles Plymouth module inclusion automatically
+  # Just add kernel parameters for Plymouth
   if [ -d "/boot/loader/entries" ]; then # systemd-boot
     echo "Detected systemd-boot"
 

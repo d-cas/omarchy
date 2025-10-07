@@ -21,7 +21,8 @@ libsass
 libva-intel-driver
 libva-nvidia-driver
 limine
-limine-mkinitcpio-hook
+dracut
+limine-dracut-support
 limine-snapper-sync
 linux
 linux-firmware

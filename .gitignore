@@ -1,0 +1,7 @@
+
+# Migration tracking (temporary)
+.omarchy-migration/
+omarchy-dracut-checklist.md
+
+# Claude Code agent configs
+.claude/
