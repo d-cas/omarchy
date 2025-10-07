@@ -22,7 +22,6 @@ libva-intel-driver
 libva-nvidia-driver
 limine
 dracut
-limine-dracut-support
 limine-snapper-sync
 linux
 linux-firmware

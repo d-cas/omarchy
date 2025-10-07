@@ -28,13 +28,13 @@ if [ -f "$OMARCHY_INSTALL/config/dracut/30-nvidia.conf" ]; then
 fi
 
 # Install Limine integration pacman hook
-if [ -f "$OMARCHY_INSTALL/config/hooks/95-limine-dracut.hook" ]; then
-  echo "Installing Limine dracut integration hook..."
-  sudo install -Dm644 "$OMARCHY_INSTALL/config/hooks/95-limine-dracut.hook" /usr/share/libalpm/hooks/95-limine-dracut.hook
-  echo "Limine hook installed: /usr/share/libalpm/hooks/95-limine-dracut.hook"
-else
-  echo "Warning: Limine hook not found at $OMARCHY_INSTALL/config/hooks/95-limine-dracut.hook"
-fi
+#if [ -f "$OMARCHY_INSTALL/config/hooks/95-limine-dracut.hook" ]; then
+#  echo "Installing Limine dracut integration hook..."
+#  sudo install -Dm644 "$OMARCHY_INSTALL/config/hooks/95-limine-dracut.hook" /usr/share/libalpm/hooks/95-limine-dracut.hook
+#  echo "Limine hook installed: /usr/share/libalpm/hooks/95-limine-dracut.hook"
+#else
+#  echo "Warning: Limine hook not found at $OMARCHY_INSTALL/config/hooks/95-limine-dracut.hook"
+#fi
 
 # Re-enable dracut hooks (reverse what disable-dracut-hooks.sh did)
 echo "Re-enabling dracut pacman hooks..."
