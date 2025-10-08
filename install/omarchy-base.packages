@@ -120,7 +120,7 @@ wiremix
 wireplumber
 wl-clip-persist
 wl-clipboard
-wl-screenrec
+#wl-screenrec  # TEMPORARY: Commented out - exceeds mirror file size limit
 woff2-font-awesome
 xdg-desktop-portal-gtk
 xdg-desktop-portal-hyprland
