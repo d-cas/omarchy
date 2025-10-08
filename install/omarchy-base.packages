@@ -4,7 +4,7 @@
 1password-beta
 1password-cli
 alacritty
-asdcontrol-git
+#asdcontrol-git  # TEMPORARY: Package not found, blocking ISO build
 avahi
 bash-completion
 bat
