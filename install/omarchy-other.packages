@@ -21,6 +21,7 @@ libsass
 libva-intel-driver
 libva-nvidia-driver
 limine
+mkinitcpio
 dracut
 limine-snapper-sync
 linux
