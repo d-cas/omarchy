@@ -62,11 +62,11 @@ fi
 
 echo "dracut setup complete"
 
-# Trigger limine-update to populate boot entries now that initramfs exists
+# Trigger limine-snapper-sync to populate boot entries now that initramfs exists
 echo "Updating Limine bootloader entries..."
-if command -v limine-update &>/dev/null; then
-  sudo limine-update
+if command -v limine-snapper-sync &>/dev/null; then
+  sudo limine-snapper-sync
   echo "Limine entries updated"
 else
-  echo "Warning: limine-update not found - boot entries may not be populated"
+  echo "Warning: limine-snapper-sync not found - boot entries may not be populated"
 fi
