@@ -149,6 +149,9 @@ EOF
   sudo sed -i 's/^NUMBER_LIMIT_IMPORTANT="10"/NUMBER_LIMIT_IMPORTANT="5"/' /etc/snapper/configs/{root,home}
 
   chrootable_systemctl_enable limine-snapper-sync.service
+
+  # Trigger initial boot entry generation
+  sudo limine-update
 fi
 
 # Add UKI entry to UEFI machines to skip bootloader showing on normal boot
