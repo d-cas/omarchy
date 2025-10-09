@@ -62,24 +62,45 @@ fi
 
 echo "dracut setup complete"
 
-# Trigger limine-snapper-sync to populate boot entries now that initramfs exists
-echo "Updating Limine bootloader entries..."
-if command -v limine-snapper-sync &>/dev/null; then
-  # Ensure Java 17+ is installed (required by limine-snapper-sync)
-  if ! command -v java &>/dev/null; then
-    echo "Installing Java 17+ (required by limine-snapper-sync)..."
-    sudo pacman -S --noconfirm --needed jre17-openjdk
-  else
-    # Check Java version
-    java_version=$(java -version 2>&1 | awk -F '"' '/version/ {print $2}' | cut -d. -f1)
-    if [ "$java_version" -lt 17 ]; then
-      echo "Java $java_version found, upgrading to Java 17+ (required by limine-snapper-sync)..."
-      sudo pacman -S --noconfirm --needed jre17-openjdk
+# Create initial boot entry manually (limine-snapper-sync will update on first boot)
+echo "Creating initial boot entry..."
+
+# Get kernel version
+kernel_version=$(ls /boot/vmlinuz-* 2>/dev/null | head -1 | sed 's/.*vmlinuz-//')
+if [ -z "$kernel_version" ]; then
+  echo "Warning: No kernel found in /boot"
+else
+  # Get initramfs path
+  initramfs_path="/boot/initramfs-${kernel_version}.img"
+
+  # Get kernel cmdline from /etc/default/limine if it exists
+  if [ -f /etc/default/limine ]; then
+    cmdline=$(grep '^KERNEL_CMDLINE\[default\]=' /etc/default/limine | head -1 | sed 's/^KERNEL_CMDLINE\[default\]="\(.*\)"$/\1/')
+    if [ -z "$cmdline" ]; then
+      # Fallback: detect LUKS
+      if cryptsetup status root &>/dev/null; then
+        luks_dev=$(cryptsetup status root | grep "device:" | awk '{print $2}')
+        luks_uuid=$(blkid -s UUID -o value "$luks_dev")
+        cmdline="root=/dev/mapper/root rd.luks.uuid=$luks_uuid rw quiet splash"
+      else
+        root_uuid=$(findmnt -n -o UUID /)
+        cmdline="root=UUID=$root_uuid rw quiet splash"
+      fi
     fi
   fi
 
-  sudo limine-snapper-sync
-  echo "Limine entries updated"
-else
-  echo "Warning: limine-snapper-sync not found - boot entries may not be populated"
+  # Append to limine.conf
+  echo "Adding boot entry for kernel ${kernel_version}..."
+  sudo tee -a /boot/limine.conf <<EOF >/dev/null
+
+# Default Omarchy Boot Entry
+/Omarchy
+  protocol: linux
+  kernel_path: boot():/vmlinuz-${kernel_version}
+  module_path: boot():/initramfs-${kernel_version}.img
+  cmdline: ${cmdline}
+EOF
+
+  echo "Boot entry created successfully"
+  echo "limine-snapper-sync.service will manage entries on subsequent boots"
 fi
