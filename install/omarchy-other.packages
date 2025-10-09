@@ -16,6 +16,7 @@ htop
 intltool
 iwd
 jdk-openjdk
+jre17-openjdk
 libpulse
 libsass
 libva-intel-driver

@@ -65,10 +65,17 @@ echo "dracut setup complete"
 # Trigger limine-snapper-sync to populate boot entries now that initramfs exists
 echo "Updating Limine bootloader entries..."
 if command -v limine-snapper-sync &>/dev/null; then
-  # Ensure Java is installed (required by limine-snapper-sync)
+  # Ensure Java 17+ is installed (required by limine-snapper-sync)
   if ! command -v java &>/dev/null; then
-    echo "Installing Java (required by limine-snapper-sync)..."
-    sudo pacman -S --noconfirm --needed jre-openjdk
+    echo "Installing Java 17+ (required by limine-snapper-sync)..."
+    sudo pacman -S --noconfirm --needed jre17-openjdk
+  else
+    # Check Java version
+    java_version=$(java -version 2>&1 | awk -F '"' '/version/ {print $2}' | cut -d. -f1)
+    if [ "$java_version" -lt 17 ]; then
+      echo "Java $java_version found, upgrading to Java 17+ (required by limine-snapper-sync)..."
+      sudo pacman -S --noconfirm --needed jre17-openjdk
+    fi
   fi
 
   sudo limine-snapper-sync
