@@ -1,7 +1,8 @@
 if command -v limine &>/dev/null; then
-  [[ -f /boot/EFI/limine/limine.conf ]] || [[ -f /boot/EFI/BOOT/limine.conf ]] && EFI=true
+  # Detect EFI vs BIOS
+  [[ -d /sys/firmware/efi ]] && EFI=true
 
-  # Conf location is different between EFI and BIOS
+  # Determine config location
   if [[ -n "$EFI" ]]; then
     # Check USB location first, then regular EFI location
     if [[ -f /boot/EFI/BOOT/limine.conf ]]; then
@@ -13,13 +14,67 @@ if command -v limine &>/dev/null; then
     limine_config="/boot/limine/limine.conf"
   fi
 
-  # Double-check and exit if we don't have a config file for some reason
+  # If config doesn't exist, create initial Limine setup
   if [[ ! -f $limine_config ]]; then
-    echo "Error: Limine config not found at $limine_config" >&2
-    exit 1
-  fi
+    echo "Limine config not found at $limine_config, creating initial setup..."
 
-  CMDLINE=$(grep "^[[:space:]]*cmdline:" "$limine_config" | head -1 | sed 's/^[[:space:]]*cmdline:[[:space:]]*//')
+    # Install Limine bootloader
+    if [[ -n "$EFI" ]]; then
+      # EFI installation
+      sudo mkdir -p /boot/EFI/BOOT
+      sudo cp /usr/share/limine/BOOTX64.EFI /boot/EFI/BOOT/
+      limine_config="/boot/EFI/BOOT/limine.conf"
+    else
+      # BIOS installation
+      boot_disk=$(findmnt -n -o SOURCE /boot | sed 's/p\?[0-9]*$//')
+      sudo limine bios-install "$boot_disk"
+      sudo mkdir -p /boot/limine
+      sudo cp /usr/share/limine/limine-bios.sys /boot/limine/
+      limine_config="/boot/limine/limine.conf"
+    fi
+
+    # Get root device and kernel parameters
+    root_dev=$(findmnt -n -o SOURCE /)
+    root_uuid=$(findmnt -n -o UUID /)
+
+    # Build initial cmdline
+    if cryptsetup status root &>/dev/null; then
+      # Encrypted root - get LUKS UUID
+      luks_dev=$(cryptsetup status root | grep "device:" | awk '{print $2}')
+      luks_uuid=$(blkid -s UUID -o value "$luks_dev")
+      CMDLINE="root=/dev/mapper/root rd.luks.uuid=$luks_uuid"
+    else
+      # Unencrypted root
+      CMDLINE="root=UUID=$root_uuid"
+    fi
+    CMDLINE="$CMDLINE rw"
+
+    # Create initial limine.conf
+    sudo tee "$limine_config" <<EOF >/dev/null
+### Read more at config document: https://github.com/limine-bootloader/limine/blob/trunk/CONFIG.md
+#timeout: 3
+default_entry: 2
+interface_branding: Omarchy Bootloader
+interface_branding_color: 2
+hash_mismatch_panic: no
+
+term_background: 1a1b26
+backdrop: 1a1b26
+
+# Terminal colors (Tokyo Night palette)
+term_palette: 15161e;f7768e;9ece6a;e0af68;7aa2f7;bb9af7;7dcfff;a9b1d6
+term_palette_bright: 414868;f7768e;9ece6a;e0af68;7aa2f7;bb9af7;7dcfff;c0caf5
+
+# Text colors
+term_foreground: c0caf5
+term_foreground_bright: c0caf5
+term_background_bright: 24283b
+
+EOF
+  else
+    # Config exists, extract existing cmdline
+    CMDLINE=$(grep "^[[:space:]]*cmdline:" "$limine_config" | head -1 | sed 's/^[[:space:]]*cmdline:[[:space:]]*//')
+  fi
 
   sudo tee /etc/default/limine <<EOF >/dev/null
 TARGET_OS_NAME="Omarchy"
