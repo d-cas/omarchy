@@ -81,7 +81,7 @@ else
       if cryptsetup status root &>/dev/null; then
         luks_dev=$(cryptsetup status root | grep "device:" | awk '{print $2}')
         luks_uuid=$(blkid -s UUID -o value "$luks_dev")
-        cmdline="root=/dev/mapper/root rd.luks.uuid=$luks_uuid rw quiet splash"
+        cmdline="root=/dev/mapper/root rd.luks.uuid=$luks_uuid rd.luks.name=${luks_uuid}=root rw quiet splash"
       else
         root_uuid=$(findmnt -n -o UUID /)
         cmdline="root=UUID=$root_uuid rw quiet splash"

@@ -39,10 +39,10 @@ if command -v limine &>/dev/null; then
 
     # Build initial cmdline
     if cryptsetup status root &>/dev/null; then
-      # Encrypted root - get LUKS UUID
+      # Encrypted root - get LUKS UUID and mapper name
       luks_dev=$(cryptsetup status root | grep "device:" | awk '{print $2}')
       luks_uuid=$(blkid -s UUID -o value "$luks_dev")
-      CMDLINE="root=/dev/mapper/root rd.luks.uuid=$luks_uuid"
+      CMDLINE="root=/dev/mapper/root rd.luks.uuid=$luks_uuid rd.luks.name=${luks_uuid}=root"
     else
       # Unencrypted root
       CMDLINE="root=UUID=$root_uuid"
