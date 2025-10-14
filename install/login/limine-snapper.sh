@@ -168,11 +168,11 @@ EOF
 
   # Match Snapper configs if not installing from the ISO
   if [[ -z ${OMARCHY_CHROOT_INSTALL:-} ]]; then
-    if ! sudo snapper list-configs 2>/dev/null | grep -q "root"; then
+    if ! sudo snapper list-configs 2>/dev/null | grep -qF -- "root"; then
       sudo snapper -c root create-config /
     fi
 
-    if ! sudo snapper list-configs 2>/dev/null | grep -q "home"; then
+    if ! sudo snapper list-configs 2>/dev/null | grep -qF -- "home"; then
       sudo snapper -c home create-config /home
     fi
   fi
@@ -186,9 +186,9 @@ EOF
 fi
 
 # Add UKI entry to UEFI machines to skip bootloader showing on normal boot
-if [[ -n $EFI ]] && efibootmgr &>/dev/null && ! efibootmgr | grep -q Omarchy &&
-  ! cat /sys/class/dmi/id/bios_vendor 2>/dev/null | grep -qi "American Megatrends" &&
-  ! cat /sys/class/dmi/id/bios_vendor 2>/dev/null | grep -qi "Apple"; then
+if [[ -n $EFI ]] && efibootmgr &>/dev/null && ! efibootmgr | grep -qF -- "Omarchy" &&
+  ! cat /sys/class/dmi/id/bios_vendor 2>/dev/null | grep -qiF -- "American Megatrends" &&
+  ! cat /sys/class/dmi/id/bios_vendor 2>/dev/null | grep -qiF -- "Apple"; then
   sudo efibootmgr --create \
     --disk "$(findmnt -n -o SOURCE /boot | sed 's/p\?[0-9]*$//')" \
     --part "$(findmnt -n -o SOURCE /boot | grep -o 'p\?[0-9]*$' | sed 's/^p//')" \

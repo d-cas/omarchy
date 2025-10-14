@@ -135,17 +135,17 @@ EOF
 fi
 
 # Mask plymouth-quit-wait.service only if not already masked
-if ! systemctl is-enabled plymouth-quit-wait.service | grep -q masked; then
+if ! systemctl is-enabled plymouth-quit-wait.service | grep -qF -- "masked"; then
   sudo systemctl mask plymouth-quit-wait.service
   sudo systemctl daemon-reload
 fi
 
 # Enable omarchy-seamless-login.service only if not already enabled
-if ! systemctl is-enabled omarchy-seamless-login.service | grep -q enabled; then
+if ! systemctl is-enabled omarchy-seamless-login.service | grep -qF -- "enabled"; then
   sudo systemctl enable omarchy-seamless-login.service
 fi
 
 # Disable getty@tty1.service only if not already disabled
-if ! systemctl is-enabled getty@tty1.service | grep -q disabled; then
+if ! systemctl is-enabled getty@tty1.service | grep -qF -- "disabled"; then
   sudo systemctl disable getty@tty1.service
 fi

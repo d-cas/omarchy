@@ -12,8 +12,8 @@ if ! command -v limine &>/dev/null; then
           continue
         fi
 
-        # Skip if splash it already present for some reason
-        if ! grep -q "splash" "$entry"; then
+        # Skip if splash is already present for some reason
+        if ! grep -qF -- "splash" "$entry"; then
           sudo sed -i '/^options/ s/$/ splash quiet/' "$entry"
         else
           echo "Skipped: $(basename "$entry") (splash already present)"
@@ -28,7 +28,7 @@ if ! command -v limine &>/dev/null; then
     sudo cp /etc/default/grub "/etc/default/grub.bak.${backup_timestamp}"
 
     # Check if splash is already in GRUB_CMDLINE_LINUX_DEFAULT
-    if ! grep -q "GRUB_CMDLINE_LINUX_DEFAULT.*splash" /etc/default/grub; then
+    if ! grep -qF -- "splash" /etc/default/grub; then
       # Get current GRUB_CMDLINE_LINUX_DEFAULT value
       current_cmdline=$(grep "^GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub | cut -d'"' -f2)
 
@@ -55,11 +55,11 @@ if ! command -v limine &>/dev/null; then
     echo "Detected a UKI setup"
     # Relying on mkinitcpio to assemble a UKI
     # https://wiki.archlinux.org/title/Unified_kernel_image
-    if ! grep -q splash /etc/cmdline.d/*.conf; then
+    if ! grep -qF -- "splash" /etc/cmdline.d/*.conf 2>/dev/null; then
       # Need splash, create the omarchy file
       echo "splash" | sudo tee -a /etc/cmdline.d/omarchy.conf
     fi
-    if ! grep -q quiet /etc/cmdline.d/*.conf; then
+    if ! grep -qF -- "quiet" /etc/cmdline.d/*.conf 2>/dev/null; then
       # Need quiet, create or append the omarchy file
       echo "quiet" | sudo tee -a /etc/cmdline.d/omarchy.conf
     fi
