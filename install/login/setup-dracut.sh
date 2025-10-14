@@ -89,72 +89,122 @@ else
   # IMPORTANT: Do NOT use /etc/default/limine - it has mkinitcpio syntax
   # We must detect LUKS ourselves and use dracut syntax
 
-  echo "Detecting LUKS configuration for dracut..."
+  echo "========================================="
+  echo "DEBUG: Starting LUKS detection for dracut"
+  echo "DEBUG: PWD = $(pwd)"
+  echo "DEBUG: /sys/class/block exists? $([ -d /sys/class/block ] && echo YES || echo NO)"
+  echo "DEBUG: /dev exists? $([ -d /dev ] && echo YES || echo NO)"
+  echo "DEBUG: /proc exists? $([ -d /proc ] && echo YES || echo NO)"
+  echo "========================================="
 
   # Scan for LUKS devices directly (works even without /proc mounted in chroot)
   luks_uuid=""
   luks_dev=""
 
   # Try cryptsetup status first (works if running outside chroot with mapper active)
+  echo "DEBUG: Trying cryptsetup status root..."
   if cryptsetup status root &>/dev/null; then
     luks_dev=$(cryptsetup status root | grep "device:" | awk '{print $2}')
     luks_uuid=$(cryptsetup luksUUID "$luks_dev" 2>/dev/null)
-    echo "Found LUKS via cryptsetup status: $luks_dev (UUID: $luks_uuid)"
+    echo "DEBUG: SUCCESS - Found LUKS via cryptsetup status: $luks_dev (UUID: $luks_uuid)"
+  else
+    echo "DEBUG: cryptsetup status root FAILED"
   fi
 
   # If that didn't work, scan /sys/class/block (available in chroot)
   if [ -z "$luks_uuid" ]; then
-    echo "Scanning block devices for LUKS container..."
+    echo "DEBUG: Scanning /sys/class/block for LUKS devices..."
+    echo "DEBUG: Block devices found: $(ls /sys/class/block/ 2>/dev/null | tr '\n' ' ')"
+
     for blockdev in /sys/class/block/*; do
       devname="/dev/$(basename "$blockdev")"
+      echo "DEBUG: Checking $devname..."
+
       # Skip loop devices, ram, and non-partition devices without numbers
-      [[ "$devname" == /dev/loop* ]] && continue
-      [[ "$devname" == /dev/ram* ]] && continue
-      [[ ! "$devname" =~ [0-9]$ ]] && continue
+      if [[ "$devname" == /dev/loop* ]]; then
+        echo "DEBUG: Skipping loop device $devname"
+        continue
+      fi
+      if [[ "$devname" == /dev/ram* ]]; then
+        echo "DEBUG: Skipping ram device $devname"
+        continue
+      fi
+      if [[ ! "$devname" =~ [0-9]$ ]]; then
+        echo "DEBUG: Skipping non-partition $devname (no number suffix)"
+        continue
+      fi
+
+      # Check if device exists and is block device
+      if [ ! -b "$devname" ]; then
+        echo "DEBUG: $devname is not a block device or doesn't exist"
+        continue
+      fi
 
       # Check if it's a LUKS device
-      if [ -b "$devname" ] && cryptsetup isLuks "$devname" 2>/dev/null; then
+      echo "DEBUG: Running cryptsetup isLuks on $devname..."
+      if cryptsetup isLuks "$devname" 2>/dev/null; then
+        echo "DEBUG: $devname IS a LUKS device!"
         luks_uuid=$(cryptsetup luksUUID "$devname" 2>/dev/null)
         if [ -n "$luks_uuid" ]; then
-          echo "Found LUKS device: $devname with UUID: $luks_uuid"
+          echo "DEBUG: SUCCESS - Found LUKS device: $devname with UUID: $luks_uuid"
           luks_dev="$devname"
           break
+        else
+          echo "DEBUG: WARNING - $devname is LUKS but luksUUID failed"
         fi
+      else
+        echo "DEBUG: $devname is not a LUKS device"
       fi
     done
+
+    if [ -z "$luks_uuid" ]; then
+      echo "DEBUG: SCAN COMPLETE - No LUKS devices found!"
+    fi
   fi
 
   # If we found a LUKS device, configure for encrypted root
   if [ -n "$luks_uuid" ]; then
-    echo "Encrypted root detected with LUKS UUID: $luks_uuid"
+    echo "DEBUG: *** ENCRYPTED ROOT PATH ***"
+    echo "DEBUG: Using LUKS UUID: $luks_uuid"
 
     # Get root filesystem info for additional parameters (may fail in chroot, that's OK)
     root_fstype=$(findmnt -n -o FSTYPE / 2>/dev/null)
     root_opts=""
+    echo "DEBUG: Root fstype: $root_fstype"
 
     if [ "$root_fstype" = "btrfs" ]; then
       root_subvol=$(findmnt -n -o OPTIONS / 2>/dev/null | grep -oP 'subvol=\K[^,]+' || echo "@")
       root_opts="rootflags=subvol=$root_subvol rootfstype=btrfs"
+      echo "DEBUG: Btrfs subvol: $root_subvol"
     fi
 
     # Build dracut-compatible cmdline
     cmdline="rd.luks.uuid=$luks_uuid rd.luks.name=${luks_uuid}=root root=/dev/mapper/root $root_opts rw"
-    echo "Generated LUKS cmdline: $cmdline"
+    echo "DEBUG: Generated LUKS cmdline: $cmdline"
   else
     # No LUKS found - unencrypted root
-    echo "No LUKS device found, assuming unencrypted root"
+    echo "DEBUG: *** UNENCRYPTED ROOT FALLBACK PATH ***"
+    echo "DEBUG: WARNING - Using fallback logic (this generates WRONG UUID for encrypted systems!)"
+
     root_source=$(findmnt -n -o SOURCE / 2>/dev/null)
     root_uuid=$(findmnt -n -o UUID / 2>/dev/null)
+    echo "DEBUG: root_source from findmnt: $root_source"
+    echo "DEBUG: root_uuid from findmnt: $root_uuid"
 
     if [ -n "$root_uuid" ]; then
       cmdline="root=UUID=$root_uuid rw"
+      echo "DEBUG: Using filesystem UUID (WRONG for encrypted!): $root_uuid"
     elif [ -n "$root_source" ]; then
       cmdline="root=$root_source rw"
+      echo "DEBUG: Using root source: $root_source"
     else
-      echo "Warning: Could not detect root device"
+      echo "DEBUG: Could not detect root device at all"
       cmdline="root=/dev/mapper/root rw"
     fi
   fi
+
+  echo "DEBUG: FINAL cmdline = $cmdline"
+  echo "========================================="
 
   # Append to correct limine.conf location
   echo "Adding boot entry to ${limine_config} for kernel ${kernel_version}..."
