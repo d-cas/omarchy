@@ -38,10 +38,36 @@ if command -v limine &>/dev/null; then
     root_uuid=$(findmnt -n -o UUID /)
 
     # Build initial cmdline with dracut syntax
-    if cryptsetup status root &>/dev/null; then
-      # Encrypted root - get the actual LUKS UUID (not PARTUUID!)
-      luks_dev=$(cryptsetup status root | grep "device:" | awk '{print $2}')
-      luks_uuid=$(cryptsetup luksUUID "$luks_dev" 2>/dev/null)
+    # Check if root is on an encrypted device
+    if [[ "$root_dev" == /dev/mapper/* ]]; then
+      echo "Encrypted root detected: $root_dev"
+
+      # Try cryptsetup status first (works if running outside chroot)
+      if cryptsetup status root &>/dev/null; then
+        luks_dev=$(cryptsetup status root | grep "device:" | awk '{print $2}')
+        luks_uuid=$(cryptsetup luksUUID "$luks_dev" 2>/dev/null)
+      fi
+
+      # If that didn't work (e.g., in chroot), scan /sys/class/block
+      if [ -z "$luks_uuid" ]; then
+        echo "Scanning block devices for LUKS container..."
+        for blockdev in /sys/class/block/*; do
+          devname="/dev/$(basename "$blockdev")"
+          # Skip loop devices, ram, and non-partition devices without numbers
+          [[ "$devname" == /dev/loop* ]] && continue
+          [[ "$devname" == /dev/ram* ]] && continue
+          [[ ! "$devname" =~ [0-9]$ ]] && continue
+
+          # Check if it's a LUKS device
+          if [ -b "$devname" ] && cryptsetup isLuks "$devname" 2>/dev/null; then
+            luks_uuid=$(cryptsetup luksUUID "$devname" 2>/dev/null)
+            if [ -n "$luks_uuid" ]; then
+              echo "Found LUKS device: $devname with UUID: $luks_uuid"
+              break
+            fi
+          fi
+        done
+      fi
 
       if [ -n "$luks_uuid" ]; then
         # Use dracut syntax with LUKS UUID
@@ -89,10 +115,36 @@ EOF
     root_uuid=$(findmnt -n -o UUID /)
 
     # Build initial cmdline with dracut syntax
-    if cryptsetup status root &>/dev/null; then
-      # Encrypted root - get the actual LUKS UUID (not PARTUUID!)
-      luks_dev=$(cryptsetup status root | grep "device:" | awk '{print $2}')
-      luks_uuid=$(cryptsetup luksUUID "$luks_dev" 2>/dev/null)
+    # Check if root is on an encrypted device
+    if [[ "$root_dev" == /dev/mapper/* ]]; then
+      echo "Encrypted root detected: $root_dev"
+
+      # Try cryptsetup status first (works if running outside chroot)
+      if cryptsetup status root &>/dev/null; then
+        luks_dev=$(cryptsetup status root | grep "device:" | awk '{print $2}')
+        luks_uuid=$(cryptsetup luksUUID "$luks_dev" 2>/dev/null)
+      fi
+
+      # If that didn't work (e.g., in chroot), scan /sys/class/block
+      if [ -z "$luks_uuid" ]; then
+        echo "Scanning block devices for LUKS container..."
+        for blockdev in /sys/class/block/*; do
+          devname="/dev/$(basename "$blockdev")"
+          # Skip loop devices, ram, and non-partition devices without numbers
+          [[ "$devname" == /dev/loop* ]] && continue
+          [[ "$devname" == /dev/ram* ]] && continue
+          [[ ! "$devname" =~ [0-9]$ ]] && continue
+
+          # Check if it's a LUKS device
+          if [ -b "$devname" ] && cryptsetup isLuks "$devname" 2>/dev/null; then
+            luks_uuid=$(cryptsetup luksUUID "$devname" 2>/dev/null)
+            if [ -n "$luks_uuid" ]; then
+              echo "Found LUKS device: $devname with UUID: $luks_uuid"
+              break
+            fi
+          fi
+        done
+      fi
 
       if [ -n "$luks_uuid" ]; then
         # Use dracut syntax with LUKS UUID

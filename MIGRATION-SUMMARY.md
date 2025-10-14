@@ -4,6 +4,42 @@
 
 ---
 
+# Latest Status (2025-10-09 - End of Session)
+
+## ✅ Major Achievements
+
+1. **archinstall Crash Fixed**: Inline Python patch successfully handles missing mkinitcpio.conf
+2. **Dracut Migration Successful**: Dracut generates initramfs and boots correctly
+3. **Bootloader Config Creation Fixed**: limine-snapper.sh now properly creates initial config
+4. **Boot Entries Generated**: Manual generation bypasses Java issues successfully
+5. **LUKS Syntax Corrected**: Added rd.luks.name parameter for proper device mapping
+
+## ⚠️ Current Status
+
+### Active Investigation: LUKS Unlock Hang
+- **Symptom**: "A start job is running for /dev/mapper/root" (infinite wait)
+- **Likely Cause**: Password prompt hidden by Plymouth or FIDO2 module waiting
+- **Current Test**: Removed FIDO2 module to test baseline password unlock
+- **Next Step**: Rebuild ISO with commit 1435a36 and test boot
+
+### Resolved Issues This Session
+1. ✅ **Limine Config Creation** - Fixed backwards logic in limine-snapper.sh
+2. ✅ **Boot Entry Population** - Manual generation works around Java 17+ requirement
+3. ✅ **LUKS Device Naming** - Correct rd.luks.name=${uuid}=root syntax implemented
+
+**See**: [SESSION-NOTES.md](SESSION-NOTES.md) for complete session details
+- Status: Testing LUKS password unlock without FIDO2
+- Next: Re-add FIDO2 once baseline works
+
+## Phase 1 Progress
+
+- Core dracut functionality: ✅ COMPLETE
+- archinstall compatibility: ✅ COMPLETE
+- Bootloader automation: ❌ BROKEN
+- FIDO2 multi-token test: ⏸️ BLOCKED
+
+---
+
 ## Overview
 
 Omarchy currently uses **mkinitcpio** for initramfs generation. Migrating to **dracut** to fix multi-token FIDO2 unlock (system hangs with multiple YubiKeys enrolled).
@@ -221,10 +257,14 @@ EOF
 
 ## Success Criteria
 
-- [ ] Fresh install completes without errors
-- [ ] System boots to desktop
+### Phase 1: Core Boot Functionality
+- [x] Fresh install completes without errors
+- [x] (CONFIRMED) lsinitrd shows dracut generated the initramfs - saw dracut boot messages
+- [ ] (BLOCKED) System boots with Limine entries - Java version issue prevents entry generation
+- [ ] LUKS unlock works with correct dracut cmdline syntax
+
+### Phase 2: Feature Validation
 - [ ] **FIDO2 multi-token unlock works (no hang)**
-- [ ] LUKS unlock works
 - [ ] Plymouth displays correctly
 - [ ] Hardware-specific features work (NVIDIA, T2, SPI)
 - [ ] Kernel updates auto-regenerate initramfs

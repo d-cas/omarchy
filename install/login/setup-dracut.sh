@@ -91,32 +91,41 @@ else
 
   echo "Detecting LUKS configuration for dracut..."
 
-  # Find the LUKS partition - try common locations and check all partitions
-  luks_dev=""
-  for dev in /dev/vda2 /dev/sda2 /dev/nvme0n1p2 /dev/vda3 /dev/sda3 /dev/nvme0n1p3; do
-    if [ -b "$dev" ] && cryptsetup isLuks "$dev" 2>/dev/null; then
-      luks_dev="$dev"
-      break
+  # Check if root is on an encrypted device
+  root_source=$(findmnt -n -o SOURCE /)
+
+  if [[ "$root_source" == /dev/mapper/* ]]; then
+    echo "Encrypted root detected: $root_source"
+
+    # Try cryptsetup status first (works if running outside chroot)
+    if cryptsetup status root &>/dev/null; then
+      luks_dev=$(cryptsetup status root | grep "device:" | awk '{print $2}')
+      luks_uuid=$(cryptsetup luksUUID "$luks_dev" 2>/dev/null)
     fi
-  done
 
-  # If not found in common locations, scan all partitions
-  if [ -z "$luks_dev" ]; then
-    for dev in /dev/vd* /dev/sd* /dev/nvme*; do
-      if [ -b "$dev" ] && [[ "$dev" =~ [0-9]$ ]] && cryptsetup isLuks "$dev" 2>/dev/null; then
-        luks_dev="$dev"
-        break
-      fi
-    done
-  fi
+    # If that didn't work (e.g., in chroot), scan /sys/class/block
+    if [ -z "$luks_uuid" ]; then
+      echo "Scanning block devices for LUKS container..."
+      for blockdev in /sys/class/block/*; do
+        devname="/dev/$(basename "$blockdev")"
+        # Skip loop devices, ram, and non-partition devices without numbers
+        [[ "$devname" == /dev/loop* ]] && continue
+        [[ "$devname" == /dev/ram* ]] && continue
+        [[ ! "$devname" =~ [0-9]$ ]] && continue
 
-  if [ -n "$luks_dev" ]; then
-    # Get the LUKS UUID (not PARTUUID!)
-    luks_uuid=$(cryptsetup luksUUID "$luks_dev" 2>/dev/null)
+        # Check if it's a LUKS device
+        if [ -b "$devname" ] && cryptsetup isLuks "$devname" 2>/dev/null; then
+          luks_uuid=$(cryptsetup luksUUID "$devname" 2>/dev/null)
+          if [ -n "$luks_uuid" ]; then
+            echo "Found LUKS device: $devname with UUID: $luks_uuid"
+            luks_dev="$devname"
+            break
+          fi
+        fi
+      done
+    fi
 
     if [ -n "$luks_uuid" ]; then
-      echo "Found LUKS device $luks_dev with LUKS UUID: $luks_uuid"
-
       # Get root filesystem info for additional parameters
       root_fstype=$(findmnt -n -o FSTYPE /)
       root_opts=""
@@ -128,24 +137,19 @@ else
 
       # Build dracut-compatible cmdline
       cmdline="rd.luks.uuid=$luks_uuid rd.luks.name=${luks_uuid}=root root=/dev/mapper/root $root_opts rw"
-      echo "Generated cmdline: $cmdline"
+      echo "Generated LUKS cmdline: $cmdline"
     else
-      echo "Warning: Could not get LUKS UUID from $luks_dev"
+      echo "Warning: Could not find LUKS UUID, using mapper fallback"
+      cmdline="root=/dev/mapper/root rw"
     fi
-  fi
-
-  # Final fallback
-  if [ -z "$cmdline" ]; then
-
-    # Final fallback if no LUKS found
-    if [ -z "$cmdline" ]; then
-      root_uuid=$(findmnt -n -o UUID / 2>/dev/null || echo "")
-      if [ -n "$root_uuid" ]; then
-        cmdline="root=UUID=$root_uuid rw"
-      else
-        cmdline="root=/dev/mapper/root rw"
-        echo "Warning: Could not detect root device, using generic fallback"
-      fi
+  else
+    # Unencrypted root
+    echo "Unencrypted root detected: $root_source"
+    root_uuid=$(findmnt -n -o UUID /)
+    if [ -n "$root_uuid" ]; then
+      cmdline="root=UUID=$root_uuid rw"
+    else
+      cmdline="root=$root_source rw"
     fi
   fi
 
