@@ -92,82 +92,61 @@ else
   echo "========================================="
   echo "DEBUG: Starting LUKS detection for dracut"
   echo "DEBUG: PWD = $(pwd)"
-  echo "DEBUG: /sys/class/block exists? $([ -d /sys/class/block ] && echo YES || echo NO)"
-  echo "DEBUG: /dev exists? $([ -d /dev ] && echo YES || echo NO)"
-  echo "DEBUG: /proc exists? $([ -d /proc ] && echo YES || echo NO)"
   echo "========================================="
 
-  # Scan for LUKS devices directly (works even without /proc mounted in chroot)
+  # Robust approach: Trace backward from root mount to find LUKS container
   luks_uuid=""
   luks_dev=""
 
-  # Try cryptsetup status first (works if running outside chroot with mapper active)
-  echo "DEBUG: Trying cryptsetup status root..."
-  if cryptsetup status root &>/dev/null; then
-    luks_dev=$(cryptsetup status root | grep "device:" | awk '{print $2}')
-    luks_uuid=$(cryptsetup luksUUID "$luks_dev" 2>/dev/null)
-    echo "DEBUG: SUCCESS - Found LUKS via cryptsetup status: $luks_dev (UUID: $luks_uuid)"
-  else
-    echo "DEBUG: cryptsetup status root FAILED"
+  # Step 1: Get the root source device (should be /dev/mapper/something for encrypted)
+  root_source=$(findmnt -n -o SOURCE / 2>/dev/null)
+  echo "DEBUG: Root source from findmnt: '$root_source'"
+
+  if [ -z "$root_source" ]; then
+    echo "DEBUG: WARNING - findmnt returned empty for root source!"
+    echo "DEBUG: Trying alternate method with /proc/mounts..."
+    root_source=$(awk '$2 == "/" {print $1}' /proc/mounts 2>/dev/null | head -1)
+    echo "DEBUG: Root source from /proc/mounts: '$root_source'"
   fi
 
-  # If that didn't work, scan /sys/class/block (available in chroot)
-  if [ -z "$luks_uuid" ]; then
-    echo "DEBUG: Scanning /sys/class/block for LUKS devices..."
-    echo "DEBUG: Block devices found: $(ls /sys/class/block/ 2>/dev/null | tr '\n' ' ')"
+  # Step 2: Check if root is on a mapper device (encrypted)
+  if [[ "$root_source" == /dev/mapper/* ]]; then
+    echo "DEBUG: Root is on mapper device - attempting to find backing LUKS device"
 
-    for blockdev in /sys/class/block/*; do
-      devname="/dev/$(basename "$blockdev")"
-      echo "DEBUG: Checking $devname..."
+    # Try cryptsetup status to get the backing device
+    echo "DEBUG: Running: cryptsetup status '$root_source'"
+    status_output=$(cryptsetup status "$root_source" 2>&1)
+    echo "DEBUG: cryptsetup status output:"
+    echo "$status_output" | while IFS= read -r line; do echo "DEBUG:   $line"; done
 
-      # Skip loop devices, ram, and non-partition devices without numbers
-      if [[ "$devname" == /dev/loop* ]]; then
-        echo "DEBUG: Skipping loop device $devname"
-        continue
-      fi
-      if [[ "$devname" == /dev/ram* ]]; then
-        echo "DEBUG: Skipping ram device $devname"
-        continue
-      fi
-      if [[ ! "$devname" =~ [0-9]$ ]]; then
-        echo "DEBUG: Skipping non-partition $devname (no number suffix)"
-        continue
-      fi
+    luks_dev=$(echo "$status_output" | grep "device:" | awk '{print $2}')
+    echo "DEBUG: Extracted backing device: '$luks_dev'"
 
-      # Check if device exists and is block device
-      if [ ! -b "$devname" ]; then
-        echo "DEBUG: $devname is not a block device or doesn't exist"
-        continue
-      fi
+    if [ -n "$luks_dev" ] && [ -b "$luks_dev" ]; then
+      echo "DEBUG: Backing device $luks_dev exists, getting LUKS UUID..."
+      luks_uuid=$(cryptsetup luksUUID "$luks_dev" 2>&1)
+      echo "DEBUG: LUKS UUID: '$luks_uuid'"
 
-      # Check if it's a LUKS device
-      echo "DEBUG: Running cryptsetup isLuks on $devname..."
-      if cryptsetup isLuks "$devname" 2>/dev/null; then
-        echo "DEBUG: $devname IS a LUKS device!"
-        luks_uuid=$(cryptsetup luksUUID "$devname" 2>/dev/null)
-        if [ -n "$luks_uuid" ]; then
-          echo "DEBUG: SUCCESS - Found LUKS device: $devname with UUID: $luks_uuid"
-          luks_dev="$devname"
-          break
-        else
-          echo "DEBUG: WARNING - $devname is LUKS but luksUUID failed"
-        fi
+      if [ -n "$luks_uuid" ]; then
+        echo "DEBUG: *** SUCCESS - Found LUKS device ***"
+        echo "DEBUG: Device: $luks_dev"
+        echo "DEBUG: UUID: $luks_uuid"
       else
-        echo "DEBUG: $devname is not a LUKS device"
+        echo "DEBUG: ERROR - luksUUID returned empty for $luks_dev"
       fi
-    done
-
-    if [ -z "$luks_uuid" ]; then
-      echo "DEBUG: SCAN COMPLETE - No LUKS devices found!"
+    else
+      echo "DEBUG: ERROR - Backing device '$luks_dev' not found or not a block device"
     fi
+  else
+    echo "DEBUG: Root source is NOT a mapper device: '$root_source'"
+    echo "DEBUG: This appears to be an unencrypted system"
   fi
 
-  # If we found a LUKS device, configure for encrypted root
+  # Step 3: Build cmdline based on what we found
   if [ -n "$luks_uuid" ]; then
     echo "DEBUG: *** ENCRYPTED ROOT PATH ***"
-    echo "DEBUG: Using LUKS UUID: $luks_uuid"
 
-    # Get root filesystem info for additional parameters (may fail in chroot, that's OK)
+    # Get root filesystem info for additional parameters
     root_fstype=$(findmnt -n -o FSTYPE / 2>/dev/null)
     root_opts=""
     echo "DEBUG: Root fstype: $root_fstype"
@@ -176,6 +155,7 @@ else
       root_subvol=$(findmnt -n -o OPTIONS / 2>/dev/null | grep -oP 'subvol=\K[^,]+' || echo "@")
       root_opts="rootflags=subvol=$root_subvol rootfstype=btrfs"
       echo "DEBUG: Btrfs subvol: $root_subvol"
+      echo "DEBUG: Root opts: $root_opts"
     fi
 
     # Build dracut-compatible cmdline
@@ -184,21 +164,18 @@ else
   else
     # No LUKS found - unencrypted root
     echo "DEBUG: *** UNENCRYPTED ROOT FALLBACK PATH ***"
-    echo "DEBUG: WARNING - Using fallback logic (this generates WRONG UUID for encrypted systems!)"
 
-    root_source=$(findmnt -n -o SOURCE / 2>/dev/null)
     root_uuid=$(findmnt -n -o UUID / 2>/dev/null)
-    echo "DEBUG: root_source from findmnt: $root_source"
-    echo "DEBUG: root_uuid from findmnt: $root_uuid"
+    echo "DEBUG: Root UUID from findmnt: '$root_uuid'"
 
     if [ -n "$root_uuid" ]; then
       cmdline="root=UUID=$root_uuid rw"
-      echo "DEBUG: Using filesystem UUID (WRONG for encrypted!): $root_uuid"
+      echo "DEBUG: Using filesystem UUID for unencrypted root: $root_uuid"
     elif [ -n "$root_source" ]; then
       cmdline="root=$root_source rw"
       echo "DEBUG: Using root source: $root_source"
     else
-      echo "DEBUG: Could not detect root device at all"
+      echo "DEBUG: ERROR - Could not determine root device"
       cmdline="root=/dev/mapper/root rw"
     fi
   fi
