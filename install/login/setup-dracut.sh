@@ -65,6 +65,19 @@ echo "dracut setup complete"
 # Create initial boot entry manually (limine-snapper-sync will update on first boot)
 echo "Creating initial boot entry..."
 
+# Determine correct limine.conf location
+if [[ -d /sys/firmware/efi ]]; then
+  # EFI system
+  if [[ -f /boot/EFI/BOOT/limine.conf ]]; then
+    limine_config="/boot/EFI/BOOT/limine.conf"
+  else
+    limine_config="/boot/EFI/limine/limine.conf"
+  fi
+else
+  # BIOS system
+  limine_config="/boot/limine/limine.conf"
+fi
+
 # Get kernel version
 kernel_version=$(ls /boot/vmlinuz-* 2>/dev/null | head -1 | sed 's/.*vmlinuz-//')
 if [ -z "$kernel_version" ]; then
@@ -73,25 +86,72 @@ else
   # Get initramfs path
   initramfs_path="/boot/initramfs-${kernel_version}.img"
 
-  # Get kernel cmdline from /etc/default/limine if it exists
-  if [ -f /etc/default/limine ]; then
-    cmdline=$(grep '^KERNEL_CMDLINE\[default\]=' /etc/default/limine | head -1 | sed 's/^KERNEL_CMDLINE\[default\]="\(.*\)"$/\1/')
+  # IMPORTANT: Do NOT use /etc/default/limine - it has mkinitcpio syntax
+  # We must detect LUKS ourselves and use dracut syntax
+
+  echo "Detecting LUKS configuration for dracut..."
+
+  # Find the LUKS partition - try common locations and check all partitions
+  luks_dev=""
+  for dev in /dev/vda2 /dev/sda2 /dev/nvme0n1p2 /dev/vda3 /dev/sda3 /dev/nvme0n1p3; do
+    if [ -b "$dev" ] && cryptsetup isLuks "$dev" 2>/dev/null; then
+      luks_dev="$dev"
+      break
+    fi
+  done
+
+  # If not found in common locations, scan all partitions
+  if [ -z "$luks_dev" ]; then
+    for dev in /dev/vd* /dev/sd* /dev/nvme*; do
+      if [ -b "$dev" ] && [[ "$dev" =~ [0-9]$ ]] && cryptsetup isLuks "$dev" 2>/dev/null; then
+        luks_dev="$dev"
+        break
+      fi
+    done
+  fi
+
+  if [ -n "$luks_dev" ]; then
+    # Get the LUKS UUID (not PARTUUID!)
+    luks_uuid=$(cryptsetup luksUUID "$luks_dev" 2>/dev/null)
+
+    if [ -n "$luks_uuid" ]; then
+      echo "Found LUKS device $luks_dev with LUKS UUID: $luks_uuid"
+
+      # Get root filesystem info for additional parameters
+      root_fstype=$(findmnt -n -o FSTYPE /)
+      root_opts=""
+
+      if [ "$root_fstype" = "btrfs" ]; then
+        root_subvol=$(findmnt -n -o OPTIONS / | grep -oP 'subvol=\K[^,]+' || echo "@")
+        root_opts="rootflags=subvol=$root_subvol rootfstype=btrfs"
+      fi
+
+      # Build dracut-compatible cmdline
+      cmdline="rd.luks.uuid=$luks_uuid rd.luks.name=${luks_uuid}=root root=/dev/mapper/root $root_opts rw"
+      echo "Generated cmdline: $cmdline"
+    else
+      echo "Warning: Could not get LUKS UUID from $luks_dev"
+    fi
+  fi
+
+  # Final fallback
+  if [ -z "$cmdline" ]; then
+
+    # Final fallback if no LUKS found
     if [ -z "$cmdline" ]; then
-      # Fallback: detect LUKS
-      if cryptsetup status root &>/dev/null; then
-        luks_dev=$(cryptsetup status root | grep "device:" | awk '{print $2}')
-        luks_uuid=$(blkid -s UUID -o value "$luks_dev")
-        cmdline="root=/dev/mapper/root rd.luks.uuid=$luks_uuid rd.luks.name=${luks_uuid}=root rw quiet splash"
+      root_uuid=$(findmnt -n -o UUID / 2>/dev/null || echo "")
+      if [ -n "$root_uuid" ]; then
+        cmdline="root=UUID=$root_uuid rw"
       else
-        root_uuid=$(findmnt -n -o UUID /)
-        cmdline="root=UUID=$root_uuid rw quiet splash"
+        cmdline="root=/dev/mapper/root rw"
+        echo "Warning: Could not detect root device, using generic fallback"
       fi
     fi
   fi
 
-  # Append to limine.conf
-  echo "Adding boot entry for kernel ${kernel_version}..."
-  sudo tee -a /boot/limine.conf <<EOF >/dev/null
+  # Append to correct limine.conf location
+  echo "Adding boot entry to ${limine_config} for kernel ${kernel_version}..."
+  sudo tee -a "${limine_config}" <<EOF >/dev/null
 
 # Default Omarchy Boot Entry
 /Omarchy
@@ -101,6 +161,6 @@ else
   cmdline: ${cmdline}
 EOF
 
-  echo "Boot entry created successfully"
+  echo "Boot entry created successfully at ${limine_config}"
   echo "limine-snapper-sync.service will manage entries on subsequent boots"
 fi

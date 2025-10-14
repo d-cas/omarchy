@@ -37,12 +37,20 @@ if command -v limine &>/dev/null; then
     root_dev=$(findmnt -n -o SOURCE /)
     root_uuid=$(findmnt -n -o UUID /)
 
-    # Build initial cmdline
+    # Build initial cmdline with dracut syntax
     if cryptsetup status root &>/dev/null; then
-      # Encrypted root - get LUKS UUID and mapper name
+      # Encrypted root - get the actual LUKS UUID (not PARTUUID!)
       luks_dev=$(cryptsetup status root | grep "device:" | awk '{print $2}')
-      luks_uuid=$(blkid -s UUID -o value "$luks_dev")
-      CMDLINE="root=/dev/mapper/root rd.luks.uuid=$luks_uuid rd.luks.name=${luks_uuid}=root"
+      luks_uuid=$(cryptsetup luksUUID "$luks_dev" 2>/dev/null)
+
+      if [ -n "$luks_uuid" ]; then
+        # Use dracut syntax with LUKS UUID
+        CMDLINE="rd.luks.uuid=$luks_uuid rd.luks.name=${luks_uuid}=root root=/dev/mapper/root"
+      else
+        # Fallback if luksUUID fails
+        echo "Warning: Could not get LUKS UUID, using fallback"
+        CMDLINE="root=/dev/mapper/root"
+      fi
     else
       # Unencrypted root
       CMDLINE="root=UUID=$root_uuid"
@@ -82,7 +90,8 @@ TARGET_OS_NAME="Omarchy"
 ESP_PATH="/boot"
 
 KERNEL_CMDLINE[default]="$CMDLINE"
-KERNEL_CMDLINE[default]+="quiet splash"
+# Temporarily disabled for LUKS debugging - re-enable once password unlock works
+# KERNEL_CMDLINE[default]+="quiet splash"
 
 # Enable dracut btrfs snapshot overlayfs support
 KERNEL_CMDLINE[Snapshots]="$CMDLINE"
