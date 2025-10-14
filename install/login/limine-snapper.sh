@@ -80,8 +80,33 @@ term_background_bright: 24283b
 
 EOF
   else
-    # Config exists, extract existing cmdline
-    CMDLINE=$(grep "^[[:space:]]*cmdline:" "$limine_config" | head -1 | sed 's/^[[:space:]]*cmdline:[[:space:]]*//')
+    # Config exists - during fresh install, archinstall creates it with mkinitcpio syntax
+    # So we MUST detect LUKS ourselves instead of reading from existing config
+    echo "Found existing config at $limine_config, detecting LUKS for dracut syntax..."
+
+    # Get root device and kernel parameters
+    root_dev=$(findmnt -n -o SOURCE /)
+    root_uuid=$(findmnt -n -o UUID /)
+
+    # Build initial cmdline with dracut syntax
+    if cryptsetup status root &>/dev/null; then
+      # Encrypted root - get the actual LUKS UUID (not PARTUUID!)
+      luks_dev=$(cryptsetup status root | grep "device:" | awk '{print $2}')
+      luks_uuid=$(cryptsetup luksUUID "$luks_dev" 2>/dev/null)
+
+      if [ -n "$luks_uuid" ]; then
+        # Use dracut syntax with LUKS UUID
+        CMDLINE="rd.luks.uuid=$luks_uuid rd.luks.name=${luks_uuid}=root root=/dev/mapper/root"
+      else
+        # Fallback if luksUUID fails
+        echo "Warning: Could not get LUKS UUID, using fallback"
+        CMDLINE="root=/dev/mapper/root"
+      fi
+    else
+      # Unencrypted root
+      CMDLINE="root=UUID=$root_uuid"
+    fi
+    CMDLINE="$CMDLINE rw"
   fi
 
   sudo tee /etc/default/limine <<EOF >/dev/null
