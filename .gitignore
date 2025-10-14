@@ -2,6 +2,15 @@
 # Migration tracking (temporary)
 .omarchy-migration/
 omarchy-dracut-checklist.md
+SESSION-NOTES.md
 
 # Claude Code agent configs
 .claude/
+
+# Local notes and debugging
+BOOTLOADER-ISSUE.md
+MIGRATION-SUMMARY.md
+
+# Screenshots
+Screenshot_*.png
+screenshots/

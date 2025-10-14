@@ -142,7 +142,7 @@ EOF
   fi
 
   # We overwrite the whole thing knowing the limine-update will add the entries for us
-  sudo tee /boot/limine.conf <<EOF >/dev/null
+  sudo tee "$limine_config" <<EOF >/dev/null
 ### Read more at config document: https://github.com/limine-bootloader/limine/blob/trunk/CONFIG.md
 #timeout: 3
 default_entry: 2
