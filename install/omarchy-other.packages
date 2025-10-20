@@ -16,12 +16,14 @@ htop
 intltool
 iwd
 jdk-openjdk
+jre17-openjdk
 libpulse
 libsass
 libva-intel-driver
 libva-nvidia-driver
 limine
-limine-mkinitcpio-hook
+mkinitcpio
+dracut
 limine-snapper-sync
 linux
 linux-firmware

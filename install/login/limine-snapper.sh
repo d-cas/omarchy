@@ -1,13 +1,8 @@
 if command -v limine &>/dev/null; then
-  sudo pacman -S --noconfirm --needed limine-snapper-sync limine-mkinitcpio-hook
+  # Detect EFI vs BIOS
+  [[ -d /sys/firmware/efi ]] && EFI=true
 
-  sudo tee /etc/mkinitcpio.conf.d/omarchy_hooks.conf <<EOF >/dev/null
-HOOKS=(base udev plymouth keyboard autodetect microcode modconf kms keymap consolefont block encrypt filesystems fsck btrfs-overlayfs)
-EOF
-
-  [[ -f /boot/EFI/limine/limine.conf ]] || [[ -f /boot/EFI/BOOT/limine.conf ]] && EFI=true
-
-  # Conf location is different between EFI and BIOS
+  # Determine config location
   if [[ -n "$EFI" ]]; then
     # Check USB location first, then regular EFI location
     if [[ -f /boot/EFI/BOOT/limine.conf ]]; then
@@ -19,13 +14,146 @@ EOF
     limine_config="/boot/limine/limine.conf"
   fi
 
-  # Double-check and exit if we don't have a config file for some reason
+  # If config doesn't exist, create initial Limine setup
   if [[ ! -f $limine_config ]]; then
-    echo "Error: Limine config not found at $limine_config" >&2
-    exit 1
-  fi
+    echo "Limine config not found at $limine_config, creating initial setup..."
 
-  CMDLINE=$(grep "^[[:space:]]*cmdline:" "$limine_config" | head -1 | sed 's/^[[:space:]]*cmdline:[[:space:]]*//')
+    # Install Limine bootloader
+    if [[ -n "$EFI" ]]; then
+      # EFI installation
+      sudo mkdir -p /boot/EFI/BOOT
+      sudo cp /usr/share/limine/BOOTX64.EFI /boot/EFI/BOOT/
+      limine_config="/boot/EFI/BOOT/limine.conf"
+    else
+      # BIOS installation
+      boot_disk=$(findmnt -n -o SOURCE /boot | sed 's/p\?[0-9]*$//')
+      sudo limine bios-install "$boot_disk"
+      sudo mkdir -p /boot/limine
+      sudo cp /usr/share/limine/limine-bios.sys /boot/limine/
+      limine_config="/boot/limine/limine.conf"
+    fi
+
+    # Scan for LUKS devices directly (works even without /proc mounted in chroot)
+    luks_uuid=""
+    luks_dev=""
+
+    # Try cryptsetup status first (works if running outside chroot with mapper active)
+    if cryptsetup status root &>/dev/null; then
+      luks_dev=$(cryptsetup status root | grep "device:" | awk '{print $2}')
+      luks_uuid=$(cryptsetup luksUUID "$luks_dev" 2>/dev/null)
+      echo "Found LUKS via cryptsetup status: $luks_dev (UUID: $luks_uuid)"
+    fi
+
+    # If that didn't work, scan /sys/class/block (available in chroot)
+    if [ -z "$luks_uuid" ]; then
+      echo "Scanning block devices for LUKS container..."
+      for blockdev in /sys/class/block/*; do
+        devname="/dev/$(basename "$blockdev")"
+        # Skip loop devices, ram, and non-partition devices without numbers
+        [[ "$devname" == /dev/loop* ]] && continue
+        [[ "$devname" == /dev/ram* ]] && continue
+        [[ ! "$devname" =~ [0-9]$ ]] && continue
+
+        # Check if it's a LUKS device
+        if [ -b "$devname" ] && cryptsetup isLuks "$devname" 2>/dev/null; then
+          luks_uuid=$(cryptsetup luksUUID "$devname" 2>/dev/null)
+          if [ -n "$luks_uuid" ]; then
+            echo "Found LUKS device: $devname with UUID: $luks_uuid"
+            break
+          fi
+        fi
+      done
+    fi
+
+    # Build cmdline based on whether we found LUKS
+    if [ -n "$luks_uuid" ]; then
+      # Encrypted root with LUKS
+      CMDLINE="rd.luks.uuid=$luks_uuid rd.luks.name=${luks_uuid}=root root=/dev/mapper/root"
+    else
+      # Unencrypted root
+      root_uuid=$(findmnt -n -o UUID / 2>/dev/null)
+      if [ -n "$root_uuid" ]; then
+        CMDLINE="root=UUID=$root_uuid"
+      else
+        CMDLINE="root=/dev/mapper/root"
+      fi
+    fi
+    CMDLINE="$CMDLINE rw"
+
+    # Create initial limine.conf
+    sudo tee "$limine_config" <<EOF >/dev/null
+### Read more at config document: https://github.com/limine-bootloader/limine/blob/trunk/CONFIG.md
+#timeout: 3
+default_entry: 2
+interface_branding: Omarchy Bootloader
+interface_branding_color: 2
+hash_mismatch_panic: no
+
+term_background: 1a1b26
+backdrop: 1a1b26
+
+# Terminal colors (Tokyo Night palette)
+term_palette: 15161e;f7768e;9ece6a;e0af68;7aa2f7;bb9af7;7dcfff;a9b1d6
+term_palette_bright: 414868;f7768e;9ece6a;e0af68;7aa2f7;bb9af7;7dcfff;c0caf5
+
+# Text colors
+term_foreground: c0caf5
+term_foreground_bright: c0caf5
+term_background_bright: 24283b
+
+EOF
+  else
+    # Config exists - during fresh install, archinstall creates it with mkinitcpio syntax
+    # So we MUST detect LUKS ourselves instead of reading from existing config
+    echo "Found existing config at $limine_config, detecting LUKS for dracut syntax..."
+
+    # Scan for LUKS devices directly (works even without /proc mounted in chroot)
+    luks_uuid=""
+    luks_dev=""
+
+    # Try cryptsetup status first (works if running outside chroot with mapper active)
+    if cryptsetup status root &>/dev/null; then
+      luks_dev=$(cryptsetup status root | grep "device:" | awk '{print $2}')
+      luks_uuid=$(cryptsetup luksUUID "$luks_dev" 2>/dev/null)
+      echo "Found LUKS via cryptsetup status: $luks_dev (UUID: $luks_uuid)"
+    fi
+
+    # If that didn't work, scan /sys/class/block (available in chroot)
+    if [ -z "$luks_uuid" ]; then
+      echo "Scanning block devices for LUKS container..."
+      for blockdev in /sys/class/block/*; do
+        devname="/dev/$(basename "$blockdev")"
+        # Skip loop devices, ram, and non-partition devices without numbers
+        [[ "$devname" == /dev/loop* ]] && continue
+        [[ "$devname" == /dev/ram* ]] && continue
+        [[ ! "$devname" =~ [0-9]$ ]] && continue
+
+        # Check if it's a LUKS device
+        if [ -b "$devname" ] && cryptsetup isLuks "$devname" 2>/dev/null; then
+          luks_uuid=$(cryptsetup luksUUID "$devname" 2>/dev/null)
+          if [ -n "$luks_uuid" ]; then
+            echo "Found LUKS device: $devname with UUID: $luks_uuid"
+            break
+          fi
+        fi
+      done
+    fi
+
+    # Build cmdline based on whether we found LUKS
+    if [ -n "$luks_uuid" ]; then
+      # Encrypted root with LUKS
+      CMDLINE="rd.luks.uuid=$luks_uuid rd.luks.name=${luks_uuid}=root root=/dev/mapper/root"
+    else
+      # Unencrypted root
+      root_uuid=$(findmnt -n -o UUID / 2>/dev/null)
+      if [ -n "$root_uuid" ]; then
+        CMDLINE="root=UUID=$root_uuid"
+      else
+        CMDLINE="root=/dev/mapper/root"
+      fi
+    fi
+    CMDLINE="$CMDLINE rw"
+  fi
 
   sudo tee /etc/default/limine <<EOF >/dev/null
 TARGET_OS_NAME="Omarchy"
@@ -33,10 +161,14 @@ TARGET_OS_NAME="Omarchy"
 ESP_PATH="/boot"
 
 KERNEL_CMDLINE[default]="$CMDLINE"
-KERNEL_CMDLINE[default]+="quiet splash"
+# Temporarily disabled for LUKS debugging - re-enable once password unlock works
+# KERNEL_CMDLINE[default]+="quiet splash"
+
+# Enable dracut btrfs snapshot overlayfs support
+KERNEL_CMDLINE[Snapshots]="$CMDLINE"
+KERNEL_CMDLINE[Snapshots]+="quiet splash rd.live.overlay.overlayfs=1"
 
 ENABLE_UKI=yes
-CUSTOM_UKI_NAME="omarchy"
 
 ENABLE_LIMINE_FALLBACK=yes
 
@@ -56,7 +188,7 @@ EOF
   fi
 
   # We overwrite the whole thing knowing the limine-update will add the entries for us
-  sudo tee /boot/limine.conf <<EOF >/dev/null
+  sudo tee "$limine_config" <<EOF >/dev/null
 ### Read more at config document: https://github.com/limine-bootloader/limine/blob/trunk/CONFIG.md
 #timeout: 3
 default_entry: 2
@@ -78,14 +210,15 @@ term_background_bright: 24283b
  
 EOF
 
+  sudo pacman -S --noconfirm --needed limine-snapper-sync
 
   # Match Snapper configs if not installing from the ISO
   if [[ -z ${OMARCHY_CHROOT_INSTALL:-} ]]; then
-    if ! sudo snapper list-configs 2>/dev/null | grep -q "root"; then
+    if ! sudo snapper list-configs 2>/dev/null | grep -qF -- "root"; then
       sudo snapper -c root create-config /
     fi
 
-    if ! sudo snapper list-configs 2>/dev/null | grep -q "home"; then
+    if ! sudo snapper list-configs 2>/dev/null | grep -qF -- "home"; then
       sudo snapper -c home create-config /home
     fi
   fi
@@ -98,39 +231,13 @@ EOF
   chrootable_systemctl_enable limine-snapper-sync.service
 fi
 
-echo "Re-enabling mkinitcpio hooks..."
-
-# Restore the specific mkinitcpio pacman hooks
-if [ -f /usr/share/libalpm/hooks/90-mkinitcpio-install.hook.disabled ]; then
-  sudo mv /usr/share/libalpm/hooks/90-mkinitcpio-install.hook.disabled /usr/share/libalpm/hooks/90-mkinitcpio-install.hook
-fi
-
-if [ -f /usr/share/libalpm/hooks/60-mkinitcpio-remove.hook.disabled ]; then
-  sudo mv /usr/share/libalpm/hooks/60-mkinitcpio-remove.hook.disabled /usr/share/libalpm/hooks/60-mkinitcpio-remove.hook
-fi
-
-echo "mkinitcpio hooks re-enabled"
-
-sudo limine-update
-
-if [[ -n $EFI ]] && efibootmgr &>/dev/null; then
-    # Remove the archinstall-created Limine entry
-  while IFS= read -r bootnum; do
-    sudo efibootmgr -b "$bootnum" -B >/dev/null 2>&1
-  done < <(efibootmgr | grep -E "^Boot[0-9]{4}\*? Arch Linux Limine" | sed 's/^Boot\([0-9]\{4\}\).*/\1/')
-fi
-
-if [[ -n $EFI ]] && efibootmgr &>/dev/null &&
-  ! cat /sys/class/dmi/id/bios_vendor 2>/dev/null | grep -qi "American Megatrends" &&
-  ! cat /sys/class/dmi/id/bios_vendor 2>/dev/null | grep -qi "Apple"; then
-
-  uki_file=$(find /boot/EFI/Linux/ -name "omarchy*.efi" -printf "%f\n" 2>/dev/null | head -1)
-
-  if [[ -n "$uki_file" ]]; then
-    sudo efibootmgr --create \
-      --disk "$(findmnt -n -o SOURCE /boot | sed 's/p\?[0-9]*$//')" \
-      --part "$(findmnt -n -o SOURCE /boot | grep -o 'p\?[0-9]*$' | sed 's/^p//')" \
-      --label "Omarchy" \
-      --loader "\\EFI\\Linux\\$uki_file"
-  fi
+# Add UKI entry to UEFI machines to skip bootloader showing on normal boot
+if [[ -n $EFI ]] && efibootmgr &>/dev/null && ! efibootmgr | grep -qF -- "Omarchy" &&
+  ! cat /sys/class/dmi/id/bios_vendor 2>/dev/null | grep -qiF -- "American Megatrends" &&
+  ! cat /sys/class/dmi/id/bios_vendor 2>/dev/null | grep -qiF -- "Apple"; then
+  sudo efibootmgr --create \
+    --disk "$(findmnt -n -o SOURCE /boot | sed 's/p\?[0-9]*$//')" \
+    --part "$(findmnt -n -o SOURCE /boot | grep -o 'p\?[0-9]*$' | sed 's/^p//')" \
+    --label "Omarchy" \
+    --loader "\\EFI\\Linux\\$(cat /etc/machine-id)_linux.efi"
 fi
