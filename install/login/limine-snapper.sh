@@ -33,39 +33,19 @@ if command -v limine &>/dev/null; then
       limine_config="/boot/limine/limine.conf"
     fi
 
-    # Scan for LUKS devices directly (works even without /proc mounted in chroot)
+    # Read LUKS UUID from file created by preflight/detect-luks.sh
     luks_uuid=""
     luks_dev=""
 
-    # Try cryptsetup status first (works if running outside chroot with mapper active)
-    if cryptsetup status root &>/dev/null; then
-      luks_dev=$(cryptsetup status root | grep "device:" | awk '{print $2}')
-      luks_uuid=$(cryptsetup luksUUID "$luks_dev" 2>/dev/null)
-      echo "Found LUKS via cryptsetup status: $luks_dev (UUID: $luks_uuid)"
+    if [ -f "/.luks_uuid" ]; then
+      luks_uuid=$(cat /.luks_uuid 2>/dev/null | tr -d '[:space:]')
+      luks_dev=$(cat /.luks_device 2>/dev/null | tr -d '[:space:]')
+      echo "Found pre-detected LUKS: $luks_dev (UUID: $luks_uuid)"
+    else
+      echo "No /.luks_uuid file - assuming unencrypted installation"
     fi
 
-    # If that didn't work, scan /sys/class/block (available in chroot)
-    if [ -z "$luks_uuid" ]; then
-      echo "Scanning block devices for LUKS container..."
-      for blockdev in /sys/class/block/*; do
-        devname="/dev/$(basename "$blockdev")"
-        # Skip loop devices, ram, and non-partition devices without numbers
-        [[ "$devname" == /dev/loop* ]] && continue
-        [[ "$devname" == /dev/ram* ]] && continue
-        [[ ! "$devname" =~ [0-9]$ ]] && continue
-
-        # Check if it's a LUKS device
-        if [ -b "$devname" ] && cryptsetup isLuks "$devname" 2>/dev/null; then
-          luks_uuid=$(cryptsetup luksUUID "$devname" 2>/dev/null)
-          if [ -n "$luks_uuid" ]; then
-            echo "Found LUKS device: $devname with UUID: $luks_uuid"
-            break
-          fi
-        fi
-      done
-    fi
-
-    # Build cmdline based on whether we found LUKS
+    # Build cmdline based on LUKS detection
     if [ -n "$luks_uuid" ]; then
       # Encrypted root with LUKS
       CMDLINE="rd.luks.uuid=$luks_uuid rd.luks.name=${luks_uuid}=root root=/dev/mapper/root"
@@ -107,39 +87,19 @@ EOF
     # So we MUST detect LUKS ourselves instead of reading from existing config
     echo "Found existing config at $limine_config, detecting LUKS for dracut syntax..."
 
-    # Scan for LUKS devices directly (works even without /proc mounted in chroot)
+    # Read LUKS UUID from file created by preflight/detect-luks.sh
     luks_uuid=""
     luks_dev=""
 
-    # Try cryptsetup status first (works if running outside chroot with mapper active)
-    if cryptsetup status root &>/dev/null; then
-      luks_dev=$(cryptsetup status root | grep "device:" | awk '{print $2}')
-      luks_uuid=$(cryptsetup luksUUID "$luks_dev" 2>/dev/null)
-      echo "Found LUKS via cryptsetup status: $luks_dev (UUID: $luks_uuid)"
+    if [ -f "/.luks_uuid" ]; then
+      luks_uuid=$(cat /.luks_uuid 2>/dev/null | tr -d '[:space:]')
+      luks_dev=$(cat /.luks_device 2>/dev/null | tr -d '[:space:]')
+      echo "Found pre-detected LUKS: $luks_dev (UUID: $luks_uuid)"
+    else
+      echo "No /.luks_uuid file - assuming unencrypted installation"
     fi
 
-    # If that didn't work, scan /sys/class/block (available in chroot)
-    if [ -z "$luks_uuid" ]; then
-      echo "Scanning block devices for LUKS container..."
-      for blockdev in /sys/class/block/*; do
-        devname="/dev/$(basename "$blockdev")"
-        # Skip loop devices, ram, and non-partition devices without numbers
-        [[ "$devname" == /dev/loop* ]] && continue
-        [[ "$devname" == /dev/ram* ]] && continue
-        [[ ! "$devname" =~ [0-9]$ ]] && continue
-
-        # Check if it's a LUKS device
-        if [ -b "$devname" ] && cryptsetup isLuks "$devname" 2>/dev/null; then
-          luks_uuid=$(cryptsetup luksUUID "$devname" 2>/dev/null)
-          if [ -n "$luks_uuid" ]; then
-            echo "Found LUKS device: $devname with UUID: $luks_uuid"
-            break
-          fi
-        fi
-      done
-    fi
-
-    # Build cmdline based on whether we found LUKS
+    # Build cmdline based on LUKS detection
     if [ -n "$luks_uuid" ]; then
       # Encrypted root with LUKS
       CMDLINE="rd.luks.uuid=$luks_uuid rd.luks.name=${luks_uuid}=root root=/dev/mapper/root"

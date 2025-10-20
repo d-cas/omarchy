@@ -5,3 +5,4 @@ run_logged $OMARCHY_INSTALL/preflight/pacman.sh
 run_logged $OMARCHY_INSTALL/preflight/migrations.sh
 run_logged $OMARCHY_INSTALL/preflight/first-run-mode.sh
 run_logged $OMARCHY_INSTALL/preflight/disable-dracut-hooks.sh
+run_logged $OMARCHY_INSTALL/preflight/detect-luks.sh

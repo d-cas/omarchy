@@ -90,97 +90,58 @@ else
   # We must detect LUKS ourselves and use dracut syntax
 
   echo "========================================="
-  echo "DEBUG: Starting LUKS detection for dracut"
-  echo "DEBUG: PWD = $(pwd)"
+  echo "BREADCRUMB: Reading LUKS info from pre-chroot detection"
   echo "========================================="
 
-  # Robust approach: Trace backward from root mount to find LUKS container
+  # Read LUKS UUID from file created by preflight/detect-luks.sh (runs BEFORE chroot)
+  # This is more reliable than trying to detect LUKS from inside chroot
   luks_uuid=""
   luks_dev=""
 
-  # Step 1: Get the root source device (should be /dev/mapper/something for encrypted)
-  root_source=$(findmnt -n -o SOURCE / 2>/dev/null)
-  echo "DEBUG: Root source from findmnt: '$root_source'"
-
-  if [ -z "$root_source" ]; then
-    echo "DEBUG: WARNING - findmnt returned empty for root source!"
-    echo "DEBUG: Trying alternate method with /proc/mounts..."
-    root_source=$(awk '$2 == "/" {print $1}' /proc/mounts 2>/dev/null | head -1)
-    echo "DEBUG: Root source from /proc/mounts: '$root_source'"
-  fi
-
-  # Step 2: Check if root is on a mapper device (encrypted)
-  if [[ "$root_source" == /dev/mapper/* ]]; then
-    echo "DEBUG: Root is on mapper device - attempting to find backing LUKS device"
-
-    # Try cryptsetup status to get the backing device
-    echo "DEBUG: Running: cryptsetup status '$root_source'"
-    status_output=$(cryptsetup status "$root_source" 2>&1)
-    echo "DEBUG: cryptsetup status output:"
-    echo "$status_output" | while IFS= read -r line; do echo "DEBUG:   $line"; done
-
-    luks_dev=$(echo "$status_output" | grep "device:" | awk '{print $2}')
-    echo "DEBUG: Extracted backing device: '$luks_dev'"
-
-    if [ -n "$luks_dev" ] && [ -b "$luks_dev" ]; then
-      echo "DEBUG: Backing device $luks_dev exists, getting LUKS UUID..."
-      luks_uuid=$(cryptsetup luksUUID "$luks_dev" 2>&1)
-      echo "DEBUG: LUKS UUID: '$luks_uuid'"
-
-      if [ -n "$luks_uuid" ]; then
-        echo "DEBUG: *** SUCCESS - Found LUKS device ***"
-        echo "DEBUG: Device: $luks_dev"
-        echo "DEBUG: UUID: $luks_uuid"
-      else
-        echo "DEBUG: ERROR - luksUUID returned empty for $luks_dev"
-      fi
-    else
-      echo "DEBUG: ERROR - Backing device '$luks_dev' not found or not a block device"
-    fi
+  if [ -f "/.luks_uuid" ]; then
+    luks_uuid=$(cat /.luks_uuid 2>/dev/null | tr -d '[:space:]')
+    luks_dev=$(cat /.luks_device 2>/dev/null | tr -d '[:space:]')
+    echo "BREADCRUMB: Found pre-detected LUKS info:"
+    echo "BREADCRUMB:   UUID: $luks_uuid"
+    echo "BREADCRUMB:   Device: $luks_dev"
   else
-    echo "DEBUG: Root source is NOT a mapper device: '$root_source'"
-    echo "DEBUG: This appears to be an unencrypted system"
+    echo "BREADCRUMB: No /.luks_uuid file found - assuming unencrypted installation"
   fi
 
-  # Step 3: Build cmdline based on what we found
+  # Build cmdline based on LUKS detection
   if [ -n "$luks_uuid" ]; then
-    echo "DEBUG: *** ENCRYPTED ROOT PATH ***"
+    echo "BREADCRUMB: *** ENCRYPTED ROOT PATH ***"
 
     # Get root filesystem info for additional parameters
     root_fstype=$(findmnt -n -o FSTYPE / 2>/dev/null)
     root_opts=""
-    echo "DEBUG: Root fstype: $root_fstype"
+    echo "BREADCRUMB: Root fstype: $root_fstype"
 
     if [ "$root_fstype" = "btrfs" ]; then
       root_subvol=$(findmnt -n -o OPTIONS / 2>/dev/null | grep -oP 'subvol=\K[^,]+' || echo "@")
       root_opts="rootflags=subvol=$root_subvol rootfstype=btrfs"
-      echo "DEBUG: Btrfs subvol: $root_subvol"
-      echo "DEBUG: Root opts: $root_opts"
+      echo "BREADCRUMB: Btrfs subvol: $root_subvol"
     fi
 
-    # Build dracut-compatible cmdline
+    # Build dracut-compatible cmdline with LUKS parameters
     cmdline="rd.luks.uuid=$luks_uuid rd.luks.name=${luks_uuid}=root root=/dev/mapper/root $root_opts rw"
-    echo "DEBUG: Generated LUKS cmdline: $cmdline"
+    echo "BREADCRUMB: Generated LUKS cmdline: $cmdline"
   else
-    # No LUKS found - unencrypted root
-    echo "DEBUG: *** UNENCRYPTED ROOT FALLBACK PATH ***"
+    # No LUKS - unencrypted root
+    echo "BREADCRUMB: *** UNENCRYPTED ROOT PATH ***"
 
     root_uuid=$(findmnt -n -o UUID / 2>/dev/null)
-    echo "DEBUG: Root UUID from findmnt: '$root_uuid'"
+    echo "BREADCRUMB: Root UUID: $root_uuid"
 
     if [ -n "$root_uuid" ]; then
       cmdline="root=UUID=$root_uuid rw"
-      echo "DEBUG: Using filesystem UUID for unencrypted root: $root_uuid"
-    elif [ -n "$root_source" ]; then
-      cmdline="root=$root_source rw"
-      echo "DEBUG: Using root source: $root_source"
     else
-      echo "DEBUG: ERROR - Could not determine root device"
+      echo "BREADCRUMB: ERROR - Could not determine root device"
       cmdline="root=/dev/mapper/root rw"
     fi
   fi
 
-  echo "DEBUG: FINAL cmdline = $cmdline"
+  echo "BREADCRUMB: FINAL cmdline = $cmdline"
   echo "========================================="
 
   # HOSTILE TAKEOVER: Completely overwrite archinstall's broken limine.conf
