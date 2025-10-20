@@ -183,11 +183,32 @@ else
   echo "DEBUG: FINAL cmdline = $cmdline"
   echo "========================================="
 
-  # Append to correct limine.conf location
-  echo "Adding boot entry to ${limine_config} for kernel ${kernel_version}..."
-  sudo tee -a "${limine_config}" <<EOF >/dev/null
+  # HOSTILE TAKEOVER: Completely overwrite archinstall's broken limine.conf
+  # archinstall creates limine.conf with mkinitcpio-style cryptdevice parameters
+  # BEFORE our scripts run. We must completely replace it with dracut-compatible config.
+  echo "BREADCRUMB: Performing HOSTILE TAKEOVER of ${limine_config}..."
+  echo "BREADCRUMB: This OVERWRITES any existing config from archinstall"
+  sudo tee "${limine_config}" <<EOF >/dev/null
+### Read more at config document: https://github.com/limine-bootloader/limine/blob/trunk/CONFIG.md
+#timeout: 3
+default_entry: 2
+interface_branding: Omarchy Bootloader
+interface_branding_color: 2
+hash_mismatch_panic: no
 
-# Default Omarchy Boot Entry
+term_background: 1a1b26
+backdrop: 1a1b26
+
+# Terminal colors (Tokyo Night palette)
+term_palette: 15161e;f7768e;9ece6a;e0af68;7aa2f7;bb9af7;7dcfff;a9b1d6
+term_palette_bright: 414868;f7768e;9ece6a;e0af68;7aa2f7;bb9af7;7dcfff;c0caf5
+
+# Text colors
+term_foreground: c0caf5
+term_foreground_bright: c0caf5
+term_background_bright: 24283b
+
+# Omarchy Boot Entry (dracut-compatible)
 /Omarchy
   protocol: linux
   kernel_path: boot():/vmlinuz-${kernel_version}
@@ -195,6 +216,7 @@ else
   cmdline: ${cmdline}
 EOF
 
-  echo "Boot entry created successfully at ${limine_config}"
-  echo "limine-snapper-sync.service will manage entries on subsequent boots"
+  echo "BREADCRUMB: ✓ ${limine_config} OVERWRITTEN successfully"
+  echo "BREADCRUMB: Boot entry created for kernel ${kernel_version}"
+  echo "BREADCRUMB: limine-snapper-sync.service will manage entries on subsequent boots"
 fi
