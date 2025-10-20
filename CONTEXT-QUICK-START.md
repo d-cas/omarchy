@@ -1,20 +1,21 @@
 # Omarchy Dracut Migration - Quick Start Context
 
-**Last Updated:** 2025-10-19
+**Last Updated:** 2025-10-20
 **Current Branch:** `dracut-rebased` (based on `upstream/dev`)
-**Status:** ✅ **WORKING** - LUKS detection successful, system boots with encrypted root
+**Status:** ✅ **COMPLETE SUCCESS** - Full MVP working with LUKS + SDDM autologin + FIDO2 enabled
 
 ---
 
-## TL;DR - Problem SOLVED ✅
+## TL;DR - MISSION ACCOMPLISHED ✅
 
-**Symptom:** Fresh Omarchy installations with LUKS encryption dropped into dracut emergency shell on first boot with error: "Warning: /dev/disk/by-uuid/WRONG-UUID does not exist"
+**Original Goal:** Migrate from mkinitcpio to dracut to fix FIDO2 multi-token unlock hangs during boot.
 
-**Root Cause Chain:**
+**Problems Solved:**
 1. LUKS detection must happen in ISO live environment, not in chroot
 2. Wrong JSON path prevented pre-archinstall detection
 3. `pipefail` broke installation pipeline before post-install scripts ran
 4. **Critical bug:** `basename` treated `[/@]` as glob pattern, breaking MAPPER_NAME extraction
+5. SDDM setup accidentally removed during dracut rebase
 
 **Solution (IMPLEMENTED & WORKING):**
 - Detect LUKS UUID in ISO's `.automated_script.sh` (before AND after archinstall)
@@ -22,12 +23,14 @@
 - Write UUID to `/mnt/.luks_uuid`
 - Read from `/.luks_uuid` in chroot scripts (`setup-dracut.sh`, `limine-snapper.sh`)
 - Generate correct `limine.conf` with dracut LUKS parameters
+- Restore SDDM and keyring setup in installation flow
 
-**Current Status:**
+**Current Status - FULLY WORKING:**
 - ✅ System boots and prompts for LUKS password
 - ✅ dracut unlocks encrypted root successfully
-- ✅ Desktop environment starts
-- ⚠️ Minor issue: SDDM not auto-enabled (manual `systemctl enable sddm` needed)
+- ✅ SDDM starts and auto-logs in
+- ✅ Desktop environment (Hyprland) starts perfectly
+- ✅ FIDO2 support enabled and ready for multi-token testing
 
 **See Also:**
 - CRITICAL-FINDINGS.md - Complete root cause analysis
@@ -248,38 +251,48 @@ Check the `cmdline:` in limine.conf - if it still shows filesystem UUID instead 
 
 ### Recent Commits
 ```
+ef256da - fix: restore SDDM and keyring setup during installation
+cb3ffb6 - docs: complete LUKS detection solution documentation
 1c76852 - fix: detect LUKS UUID before chroot to avoid chroot detection failures
 3adf5f7 - feat: migrate from mkinitcpio to dracut for improved FIDO2 multi-token support
 ```
 
 ### Remotes
 - `origin` - `d-cas/omarchy` (your fork)
-- `upstream` - `basecamp/omarchy` (original repo)
+- `upstream` - `basecamp/omarchy` (original repo - fully synced with upstream/dev)
+
+### ISO Repository
+- **Fork:** `d-cas/omarchy-iso` (forked from `omacom-io/omarchy-iso`)
+- **Branch:** `dracut` (contains all 5 LUKS detection fixes)
+- **Pushed:** All changes available on GitHub
 
 ---
 
-## Known Issues & Future Work
+## Current Status - COMPLETE ✅
 
-### Current Status
-- ✅ Pre-chroot LUKS detection implemented
+### All Systems Working
+- ✅ Pre-chroot LUKS detection implemented and tested
 - ✅ Hostile takeover fix in place
-- ✅ Clean rebase on upstream/dev
-- 🔄 **Currently testing** - ISO built, installation in progress
+- ✅ Clean rebase on upstream/dev (fully synced)
+- ✅ SDDM autologin working perfectly
+- ✅ FIDO2 enabled in dracut config
+- ✅ Full system boots: LUKS unlock → SDDM → Hyprland desktop
 
 ### FIDO2 Status
-**Temporarily disabled** in `install/config/dracut/10-omarchy.conf`:
+**ENABLED** in `install/config/dracut/10-omarchy.conf`:
 ```bash
-# FIDO2 temporarily disabled for password-only testing:
-# add_dracutmodules+=" fido2 "
+add_dracutmodules+=" crypt systemd-cryptsetup fido2 "
+install_items+=" /usr/lib/cryptsetup/libcryptsetup-token-systemd-fido2.so "
 ```
 
-**Re-enable after** password unlock works reliably.
+Ready for multi-token FIDO2 testing!
 
-### Next Steps (After This Works)
-1. Verify password unlock works
-2. Re-enable FIDO2 module in dracut config
-3. Test multi-token FIDO2 scenario (the original goal!)
-4. Potentially merge `dracut-rebased` → `dracut` → upstream
+### Next Steps
+1. ✅ ~~Verify password unlock works~~ - DONE
+2. ✅ ~~Re-enable FIDO2 module~~ - ALREADY ENABLED
+3. 🎯 **Test multi-token FIDO2 scenario** (the original goal!)
+4. 🎯 Consider PR to upstream if desired
+5. 🎯 Merge `dracut-rebased` → `dracut` → potentially upstream
 
 ---
 

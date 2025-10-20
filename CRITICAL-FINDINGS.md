@@ -198,40 +198,42 @@ sudo qemu-nbd -d /dev/nbd0 2>/dev/null || true
 echo "Unmounted successfully"
 ```
 
-## Known Issues
+## Known Issues - ALL RESOLVED ✅
 
-### SDDM Not Auto-Enabled
-**Status:** Minor - doesn't affect LUKS boot
-**Symptom:** System boots to TTY login instead of graphical login
-**Workaround:** After logging in, run:
-```bash
-sudo systemctl enable sddm
-sudo systemctl start sddm
-```
-**Fix needed:** Add `systemctl enable sddm` to the Omarchy installation scripts
+### ~~SDDM Not Auto-Enabled~~ - FIXED (2025-10-20)
+**Status:** ✅ RESOLVED
+**Problem:** During dracut rebase, `install/login/all.sh` accidentally removed calls to `sddm.sh` and `default-keyring.sh`
+**Solution:** Restored both script calls in commit `ef256da`
+**Result:** SDDM now starts automatically and auto-logs in user after LUKS unlock
 
 ## Git Commits Summary
 
-**omarchy-iso repository (main branch):**
+**omarchy-iso repository (dracut branch on d-cas/omarchy-iso fork):**
 - `7ab7f84` - Initial LUKS detection implementation (had bugs)
 - `9419ea8` - Fix jq path and add fallback detection + logging
 - `4cfc3f0` - Fix pipefail breaking installation
 - `8438b72` - Attempt to fix basename with sed (didn't work due to glob)
 - `17ca770` - **THE FIX:** Use parameter expansion to avoid glob issues
 
-**omarchy repository (dracut-rebased branch):**
-- Already had correct logic to read `/.luks_uuid`
-- No changes needed
+**omarchy repository (dracut-rebased branch on d-cas/omarchy fork):**
+- `3adf5f7` - feat: migrate from mkinitcpio to dracut for improved FIDO2 multi-token support
+- `1c76852` - fix: detect LUKS UUID before chroot to avoid chroot detection failures
+- `cb3ffb6` - docs: complete LUKS detection solution documentation
+- `ef256da` - fix: restore SDDM and keyring setup during installation
 
-## Success Criteria (ALL MET ✅)
+**Status:** All changes pushed to GitHub forks and ready for testing/PR
+
+## Success Criteria (ALL MET ✅✅✅)
 
 - [x] LUKS UUID detected during ISO installation
 - [x] `/.luks_uuid` file created in root filesystem
 - [x] `limine.conf` contains `rd.luks.uuid=<LUKS_UUID>` parameters
 - [x] System boots and prompts for LUKS password
 - [x] dracut successfully unlocks encrypted root partition
-- [x] Desktop environment starts
+- [x] SDDM starts and auto-logs in user
+- [x] Desktop environment (Hyprland) starts
 - [x] Installation logs persist to `/var/log/omarchy-install.log`
+- [x] FIDO2 support enabled for multi-token testing
 
 ## Testing Procedure
 
