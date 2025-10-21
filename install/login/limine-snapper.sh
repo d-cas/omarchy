@@ -121,8 +121,7 @@ TARGET_OS_NAME="Omarchy"
 ESP_PATH="/boot"
 
 KERNEL_CMDLINE[default]="$CMDLINE"
-# Temporarily disabled for LUKS debugging - re-enable once password unlock works
-# KERNEL_CMDLINE[default]+="quiet splash"
+KERNEL_CMDLINE[default]+=" quiet splash"
 
 # Enable dracut btrfs snapshot overlayfs support
 KERNEL_CMDLINE[Snapshots]="$CMDLINE"
