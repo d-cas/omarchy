@@ -25,6 +25,7 @@ limine
 mkinitcpio
 dracut
 limine-snapper-sync
+python-terminaltexteffects
 linux
 linux-firmware
 linux-headers

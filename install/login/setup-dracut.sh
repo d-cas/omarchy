@@ -144,40 +144,17 @@ else
   echo "BREADCRUMB: FINAL cmdline = $cmdline"
   echo "========================================="
 
-  # HOSTILE TAKEOVER: Completely overwrite archinstall's broken limine.conf
-  # archinstall creates limine.conf with mkinitcpio-style cryptdevice parameters
-  # BEFORE our scripts run. We must completely replace it with dracut-compatible config.
-  echo "BREADCRUMB: Performing HOSTILE TAKEOVER of ${limine_config}..."
-  echo "BREADCRUMB: This OVERWRITES any existing config from archinstall"
-  sudo tee "${limine_config}" <<EOF >/dev/null
-### Read more at config document: https://github.com/limine-bootloader/limine/blob/trunk/CONFIG.md
-#timeout: 3
-default_entry: 2
-interface_branding: Omarchy Bootloader
-interface_branding_color: 2
-hash_mismatch_panic: no
+  # NOTE: We do NOT write limine.conf here anymore!
+  # limine-snapper.sh (which runs BEFORE this script) already:
+  # 1. Created /etc/default/limine with correct LUKS parameters
+  # 2. Created initial limine.conf
+  # 3. Installed limine-snapper-sync.service
+  #
+  # limine-snapper-sync will generate proper boot entries on first boot.
+  # If we overwrite limine.conf here, limine-snapper-sync might undo our work.
 
-term_background: 1a1b26
-backdrop: 1a1b26
-
-# Terminal colors (Tokyo Night palette)
-term_palette: 15161e;f7768e;9ece6a;e0af68;7aa2f7;bb9af7;7dcfff;a9b1d6
-term_palette_bright: 414868;f7768e;9ece6a;e0af68;7aa2f7;bb9af7;7dcfff;c0caf5
-
-# Text colors
-term_foreground: c0caf5
-term_foreground_bright: c0caf5
-term_background_bright: 24283b
-
-# Omarchy Boot Entry (dracut-compatible)
-/Omarchy
-  protocol: linux
-  kernel_path: boot():/vmlinuz-${kernel_version}
-  module_path: boot():/initramfs-${kernel_version}.img
-  cmdline: ${cmdline}
-EOF
-
-  echo "BREADCRUMB: ✓ ${limine_config} OVERWRITTEN successfully"
-  echo "BREADCRUMB: Boot entry created for kernel ${kernel_version}"
-  echo "BREADCRUMB: limine-snapper-sync.service will manage entries on subsequent boots"
+  echo "BREADCRUMB: Skipping manual limine.conf creation"
+  echo "BREADCRUMB: limine-snapper.sh already configured /etc/default/limine with LUKS parameters"
+  echo "BREADCRUMB: limine-snapper-sync.service will generate boot entries on first boot"
+  echo "BREADCRUMB: Calculated cmdline (for reference): $cmdline"
 fi
